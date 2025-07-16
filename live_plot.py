@@ -45,6 +45,7 @@ class LivePlotter:
         
         # Animation
         self.animation = None
+        self.start_time = None
         
     def setup_plot(self, 
                    variables: List[str],
@@ -103,7 +104,7 @@ class LivePlotter:
     def update_data(self, frame):
         """Update data from source."""
         if self.data_source is None:
-            return
+            return list(self.lines.values())
         
         # Get new data
         if isinstance(self.data_source, ThreadedSensorSimulator):
@@ -111,17 +112,17 @@ class LivePlotter:
         elif callable(self.data_source):
             new_data = self.data_source()
         else:
-            return
+            return list(self.lines.values())
         
         if new_data is None:
-            return
+            return list(self.lines.values())
         
         # Add timestamp if not present
         if 'timestamp' not in new_data:
             new_data['timestamp'] = datetime.now()
         
         # Calculate time offset from start
-        if len(self.time_data) == 0:
+        if self.start_time is None:
             self.start_time = new_data['timestamp']
             time_offset = 0
         else:
@@ -158,7 +159,7 @@ class LivePlotter:
             self.fig, 
             self.update_data, 
             interval=self.update_interval,
-            blit=True,
+            blit=False,
             cache_frame_data=False
         )
         plt.show()
@@ -244,7 +245,7 @@ class MultiVariableLivePlot:
     def update_data(self, frame):
         """Update data from source."""
         if self.data_source is None:
-            return
+            return list(self.lines.values())
         
         # Get new data
         if isinstance(self.data_source, ThreadedSensorSimulator):
@@ -252,10 +253,10 @@ class MultiVariableLivePlot:
         elif callable(self.data_source):
             new_data = self.data_source()
         else:
-            return
+            return list(self.lines.values())
         
         if new_data is None:
-            return
+            return list(self.lines.values())
         
         # Add timestamp if not present
         if 'timestamp' not in new_data:
@@ -307,7 +308,7 @@ class MultiVariableLivePlot:
             self.fig, 
             self.update_data, 
             interval=self.update_interval,
-            blit=True,
+            blit=False,
             cache_frame_data=False
         )
         plt.show()

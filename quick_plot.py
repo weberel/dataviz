@@ -2,7 +2,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from typing import Union, List, Optional, Any
-import seaborn as sns
+
+# Optional seaborn import
+try:
+    import seaborn as sns
+    HAS_SEABORN = True
+except ImportError:
+    HAS_SEABORN = False
 
 
 def quick_plot(
@@ -107,6 +113,9 @@ def quick_plot(
     for i in range(n_plots, len(axes)):
         axes[i].set_visible(False)
     
+    # Filter out figure-level kwargs
+    plot_kwargs = {k: v for k, v in kwargs.items() if k not in ['title', 'figsize']}
+    
     # Plot data
     for i in range(n_plots):
         ax = axes[i]
@@ -119,13 +128,13 @@ def quick_plot(
             else:
                 color_data = color
             
-            scatter = ax.scatter(x, y_curr, c=color_data, cmap='viridis', **kwargs)
+            scatter = ax.scatter(x, y_curr, c=color_data, cmap='viridis', **plot_kwargs)
             if i == n_plots - 1:  # Add colorbar to last subplot
                 cbar = plt.colorbar(scatter, ax=ax)
                 if isinstance(color, str):
                     cbar.set_label(color)
         else:
-            ax.plot(x, y_curr, **kwargs)
+            ax.plot(x, y_curr, **plot_kwargs)
         
         # Set labels
         if y_labels and i < len(y_labels):
@@ -202,6 +211,9 @@ def plot_dataframe(
     for i in range(n_plots, len(axes)):
         axes[i].set_visible(False)
     
+    # Filter out figure-level kwargs
+    plot_kwargs = {k: v for k, v in kwargs.items() if k not in ['title', 'figsize']}
+    
     # Plot each column
     for i, col in enumerate(columns):
         ax = axes[i]
@@ -210,21 +222,21 @@ def plot_dataframe(
             if color_column:
                 # Group by color column and plot each group
                 for name, group in df.groupby(color_column):
-                    ax.plot(x_data[group.index], group[col], label=f"{color_column}={name}", **kwargs)
+                    ax.plot(x_data[group.index], group[col], label=f"{color_column}={name}", **plot_kwargs)
                 ax.legend()
             else:
-                ax.plot(x_data, df[col], **kwargs)
+                ax.plot(x_data, df[col], **plot_kwargs)
         elif plot_type == 'scatter':
             if color_column:
-                scatter = ax.scatter(x_data, df[col], c=df[color_column], cmap='viridis', **kwargs)
+                scatter = ax.scatter(x_data, df[col], c=df[color_column], cmap='viridis', **plot_kwargs)
                 if i == n_plots - 1:
                     plt.colorbar(scatter, ax=ax, label=color_column)
             else:
-                ax.scatter(x_data, df[col], **kwargs)
+                ax.scatter(x_data, df[col], **plot_kwargs)
         elif plot_type == 'bar':
-            ax.bar(x_data, df[col], **kwargs)
+            ax.bar(x_data, df[col], **plot_kwargs)
         elif plot_type == 'hist':
-            ax.hist(df[col], **kwargs)
+            ax.hist(df[col], **plot_kwargs)
         
         ax.set_xlabel(x_column if x_column else 'Index')
         ax.set_ylabel(col)

@@ -294,7 +294,7 @@ class ThreadedSensorSimulator:
         except queue.Empty:
             return None
     
-    def get_all_data(self) -> List[Dict[str, Any]]:
+    def get_all_data(self) -> list[Dict[str, Any]]:
         """Get all available data points."""
         data = []
         try:

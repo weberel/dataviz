@@ -1,7 +1,12 @@
-import dash
-from dash import dcc, html, Input, Output, State, callback
-import plotly.graph_objs as go
-import plotly.express as px
+# Optional dashboard imports
+try:
+    import dash
+    from dash import dcc, html, Input, Output, State, callback
+    import plotly.graph_objs as go
+    import plotly.express as px
+    HAS_DASH = True
+except ImportError:
+    HAS_DASH = False
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -9,7 +14,12 @@ import json
 import threading
 import time
 from collections import deque
-import serial
+# Optional serial import
+try:
+    import serial
+    HAS_SERIAL = True
+except ImportError:
+    HAS_SERIAL = False
 from sensor_simulator import BiogasSensorSimulator, ThreadedSensorSimulator
 from typing import Dict, Any, Optional, List
 
@@ -45,6 +55,10 @@ class SerialDataReader:
         
     def connect(self):
         """Connect to serial port."""
+        if not HAS_SERIAL:
+            print("Error: pyserial not installed. Install with: pip install pyserial")
+            return False
+        
         try:
             self.serial_connection = serial.Serial(
                 port=self.port,
@@ -167,6 +181,9 @@ class BiogasDashboard:
             self.threaded_sim = None
         
         # Create Dash app
+        if not HAS_DASH:
+            raise ImportError("Dash not installed. Install with: pip install dash plotly")
+        
         self.app = dash.Dash(__name__)
         self.setup_layout()
         self.setup_callbacks()

@@ -21,6 +21,7 @@ try:
 except ImportError:
     HAS_SERIAL = False
 from sensor_simulator import BiogasSensorSimulator, ThreadedSensorSimulator
+from thingsboard_integration import ThingsBoardClient, ThingsBoardSensorReader
 from typing import Dict, Any, Optional, List
 
 
@@ -147,7 +148,8 @@ class BiogasDashboard:
     def __init__(self, 
                  data_source: Optional[str] = None,
                  use_simulator: bool = True,
-                 max_points: int = 500):
+                 max_points: int = 500,
+                 thingsboard_config: Optional[Dict[str, Any]] = None):
         """
         Initialize dashboard.
         
@@ -159,10 +161,13 @@ class BiogasDashboard:
             Whether to use simulator if no real data
         max_points : int
             Maximum points to display
+        thingsboard_config : dict (optional)
+            ThingsBoard configuration with keys: host, port, username, password, use_ssl, device_name, telemetry_keys
         """
         self.data_source = data_source
         self.use_simulator = use_simulator
         self.max_points = max_points
+        self.thingsboard_config = thingsboard_config
         
         # Data storage
         self.data_buffer = deque(maxlen=max_points)
@@ -179,6 +184,39 @@ class BiogasDashboard:
         else:
             self.simulator = None
             self.threaded_sim = None
+        
+        # Initialize ThingsBoard client
+        self.thingsboard_client = None
+        self.thingsboard_reader = None
+        if thingsboard_config:
+            try:
+                self.thingsboard_client = ThingsBoardClient(
+                    host=thingsboard_config.get('host', 'localhost'),
+                    port=thingsboard_config.get('port', 8080),
+                    username=thingsboard_config.get('username', 'tenant@thingsboard.org'),
+                    password=thingsboard_config.get('password', 'tenant'),
+                    use_ssl=thingsboard_config.get('use_ssl', False)
+                )
+                
+                if self.thingsboard_client.authenticate():
+                    device_name = thingsboard_config.get('device_name')
+                    telemetry_keys = thingsboard_config.get('telemetry_keys', [])
+                    
+                    if device_name and telemetry_keys:
+                        self.thingsboard_reader = ThingsBoardSensorReader(
+                            client=self.thingsboard_client,
+                            device_name=device_name,
+                            telemetry_keys=telemetry_keys
+                        )
+                        print(f"✓ ThingsBoard reader initialized for device: {device_name}")
+                    else:
+                        print("⚠ ThingsBoard config missing device_name or telemetry_keys")
+                else:
+                    print("✗ Failed to authenticate with ThingsBoard")
+            except Exception as e:
+                print(f"✗ Error initializing ThingsBoard: {e}")
+                self.thingsboard_client = None
+                self.thingsboard_reader = None
         
         # Create Dash app
         if not HAS_DASH:
@@ -202,9 +240,10 @@ class BiogasDashboard:
                         id='data-source-dropdown',
                         options=[
                             {'label': 'Simulator', 'value': 'simulator'},
-                            {'label': 'Serial Port', 'value': 'serial'}
+                            {'label': 'Serial Port', 'value': 'serial'},
+                            {'label': 'ThingsBoard', 'value': 'thingsboard'}
                         ],
-                        value='simulator' if self.use_simulator else 'serial',
+                        value='thingsboard' if self.thingsboard_reader else ('simulator' if self.use_simulator else 'serial'),
                         style={'width': '200px'}
                     )
                 ], style={'display': 'inline-block', 'margin': '10px'}),
@@ -216,6 +255,15 @@ class BiogasDashboard:
                         type='text',
                         value=self.data_source or '/dev/ttyUSB0',
                         style={'width': '150px'}
+                    )
+                ], style={'display': 'inline-block', 'margin': '10px'}),
+                
+                html.Div([
+                    html.Label("ThingsBoard Device:"),
+                    html.Div(
+                        id='thingsboard-device-info',
+                        children=self.thingsboard_config.get('device_name', 'Not configured') if self.thingsboard_config else 'Not configured',
+                        style={'padding': '5px', 'background-color': '#f8f9fa', 'border': '1px solid #dee2e6', 'border-radius': '3px', 'width': '150px'}
                     )
                 ], style={'display': 'inline-block', 'margin': '10px'}),
                 
@@ -301,6 +349,12 @@ class BiogasDashboard:
                     if self.threaded_sim:
                         self.threaded_sim.start(interval=0.5)
                     status = "Simulator started"
+                elif data_source == 'thingsboard':
+                    if self.thingsboard_reader:
+                        self.thingsboard_reader.start_continuous_reading(interval=2.0)
+                        status = f"ThingsBoard reader started for {self.thingsboard_config.get('device_name', 'device')}"
+                    else:
+                        status = "ThingsBoard reader not available"
                 else:
                     if self.serial_reader:
                         self.serial_reader.port = serial_port
@@ -318,6 +372,8 @@ class BiogasDashboard:
                     self.threaded_sim.stop()
                 if self.serial_reader:
                     self.serial_reader.stop()
+                if self.thingsboard_reader:
+                    self.thingsboard_reader.stop_continuous_reading()
                 
                 return True, "Data collection stopped"
             
@@ -343,6 +399,8 @@ class BiogasDashboard:
                 new_data = self.threaded_sim.get_latest_data()
             elif data_source == 'serial' and self.serial_reader:
                 new_data = self.serial_reader.get_latest_data()
+            elif data_source == 'thingsboard' and self.thingsboard_reader:
+                new_data = self.thingsboard_reader.get_latest_from_buffer()
             
             if new_data:
                 # Add timestamp if not present
@@ -449,6 +507,8 @@ class BiogasDashboard:
             self.threaded_sim.stop()
         if self.serial_reader:
             self.serial_reader.disconnect()
+        if self.thingsboard_reader:
+            self.thingsboard_reader.stop_continuous_reading()
 
 
 # Example usage
@@ -458,6 +518,63 @@ def run_dashboard():
     
     try:
         print("Starting dashboard at http://localhost:8050")
+        dashboard.run(debug=False)
+    except KeyboardInterrupt:
+        print("Stopping dashboard...")
+    finally:
+        dashboard.cleanup()
+
+
+def run_thingsboard_dashboard(host="demo.thingsboard.io", 
+                             port=443, 
+                             username="tenant@thingsboard.org", 
+                             password="tenant",
+                             use_ssl=True,
+                             device_name="DHT22 Demo Device",
+                             telemetry_keys=None):
+    """
+    Run the dashboard with ThingsBoard integration.
+    
+    Parameters:
+    -----------
+    host : str
+        ThingsBoard server hostname
+    port : int
+        ThingsBoard server port
+    username : str
+        Username for authentication
+    password : str
+        Password for authentication
+    use_ssl : bool
+        Whether to use HTTPS
+    device_name : str
+        Name of the device in ThingsBoard
+    telemetry_keys : list
+        List of telemetry keys to monitor
+    """
+    if telemetry_keys is None:
+        telemetry_keys = ["temperature", "humidity", "pressure", "flow"]
+    
+    thingsboard_config = {
+        'host': host,
+        'port': port,
+        'username': username,
+        'password': password,
+        'use_ssl': use_ssl,
+        'device_name': device_name,
+        'telemetry_keys': telemetry_keys
+    }
+    
+    dashboard = BiogasDashboard(
+        use_simulator=False,
+        thingsboard_config=thingsboard_config
+    )
+    
+    try:
+        print(f"Starting ThingsBoard dashboard at http://localhost:8050")
+        print(f"Connected to ThingsBoard at {host}:{port}")
+        print(f"Monitoring device: {device_name}")
+        print(f"Telemetry keys: {telemetry_keys}")
         dashboard.run(debug=False)
     except KeyboardInterrupt:
         print("Stopping dashboard...")

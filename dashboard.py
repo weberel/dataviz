@@ -441,7 +441,7 @@ class BiogasDashboard:
     
     def run(self, host='127.0.0.1', port=8050, debug=False):
         """Run the dashboard."""
-        self.app.run_server(host=host, port=port, debug=debug)
+        self.app.run(host=host, port=port, debug=debug)
     
     def cleanup(self):
         """Cleanup resources."""
